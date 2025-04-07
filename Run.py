@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-#
 
 # Caspians project 287776
 # pandas for data manipulation
@@ -16,7 +16,26 @@ import time
 # peformance test 
 # report 
 
-start_time = time.time() # timer for performance testing
+class stopWatch():
+    def __init__(self, name):
+        self.elapsed = None
+        self.time = None
+        self.algorithm = name
+        self.start_time = None
+        self.end_time = None
+
+    def start(self):
+        self.start_time = float(time.time())  # timer for performance testing
+
+    def stop(self):
+        self.end_time = float(time.time())
+        self.duration()
+
+    def duration(self):
+        self.elapsed = self.end_time - self.start_time
+        print("Algorithm: {}, time elapsed: {} seconds".format(self.algorithm, self.elapsed))
+        return self.elapsed
+        
 
 # roughly 30% assisted by AI
 def time_to_seconds(time_str):
@@ -25,9 +44,6 @@ def time_to_seconds(time_str):
     # split the time into hours, minutes and second then return in seconds 
     return h * 3600 + m * 60 + s
 
-def heuristic(a, b):
-    # A* algorithm
-    return g(a) + h(b)
 
 def calculate_travel_time(dep, arr):
     # if its midnight its the next day  (sanatisation)
@@ -102,23 +118,212 @@ def show_graph(graph, path):
     nx.draw_networkx_nodes(subgraph, pos, nodelist=path, node_color="yellow", node_size=700)
     plt.show()
 
+def reconstruct_path(cameFrom, current):
+    total_path = [current]
+    while current in cameFrom: # check this line
+        current = cameFrom[current]
+        total_path.append(current)
+    return total_path  
+
+def heuristic(graph, node, end):
+    # a* heuristic function for A* algorithm
+    # Using a simple heuristic: the straight-line distance between nodes
+    # Assuming the graph nodes have coordinates stored as attributes 'x' and 'y'
+    def euclidean_distance(node1, node2):
+        x1, y1 = graph.nodes[node1].get('x', 0), graph.nodes[node1].get('y', 0)
+        x2, y2 = graph.nodes[node2].get('x', 0), graph.nodes[node2].get('y', 0)
+        return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+
+    return euclidean_distance(node, end)
+
+def heuristicAlternative(graph, node, end):
+    # A simpler heuristic function for A* algorithm
+    # Using the degree of the node as a heuristic
+    return abs(graph.degree(node) - graph.degree(end))
+
+def a_star(graph, start, end):
+    # *a star algorithm implmenetation
+    # based on the wikipedia A* code
+    open_set = {start}
+    cameFrom = {}
+    gScore = {node: float('inf') for node in graph.nodes} # infinity for all unknowns  
+    gScore[start] = 0
+    fScore = {node: float('inf') for node in graph.nodes} # infinity for all unknowns  
+    fScore[start] = heuristic(graph, start, end)
+    while open_set:
+        current = min(open_set, key=lambda n: fScore[n])
+        if current == end:
+            return reconstruct_path(cameFrom, current)
+        open_set.remove(current)
+        for neighbor in graph.neighbors(current):
+            tentative_gScore = gScore[current] + graph[current][neighbor]['weight']
+            if tentative_gScore < gScore[neighbor]:
+                cameFrom[neighbor] = current
+                gScore[neighbor] = tentative_gScore
+                fScore[neighbor] = gScore[neighbor] + heuristic(graph, neighbor, end)
+                open_set.add(neighbor)
+    return None
+
+
+def tabu_search(graph, start, end, max_iterations=1000, tabu_size=2):
+    current = start
+    best_path = [current]
+    best_cost = float('inf')
+    tabu_list = []
+    for _ in range(max_iterations):
+        neighbors = list(graph.neighbors(current))
+        neighbors = [n for n in neighbors if n not in tabu_list]
+        if not neighbors:
+            break
+        next_node = min(neighbors, key=lambda n: graph[current][n]['weight'])
+        best_path.append(next_node)
+        tabu_list.append(current)
+        if len(tabu_list) > tabu_size:
+            tabu_list.pop(0)
+        current = next_node
+        if current == end:
+            best_cost = sum(graph[best_path[i]][best_path[i + 1]]['weight'] for i in range(len(best_path) - 1))
+            break
+    return best_path if current == end else None, best_cost
+
+def tabu_search_variable_t(graph, start, end, max_iterations=1000):
+    current = start
+    best_path = [current]
+    best_cost = float('inf')
+    tabu_list = []
+    for _ in range(max_iterations):
+        neighbors = list(graph.neighbors(current))
+        neighbors = [n for n in neighbors if n not in tabu_list]
+        if not neighbors:
+            break
+        next_node = min(neighbors, key=lambda n: graph[current][n]['weight'])
+        best_path.append(next_node)
+        tabu_list.append(current)
+        if len(tabu_list) > len(best_path) // 2:
+            tabu_list.pop(0)
+        current = next_node
+        if current == end:
+            best_cost = sum(graph[best_path[i]][best_path[i + 1]]['weight'] for i in range(len(best_path) - 1))
+            break
+    return best_path if current == end else None, best_cost
+
+def tabu_search_with_aspiration(graph, start, end, max_iterations=100, tabu_size=1):
+    current = start
+    best_path = [current]
+    best_cost = float('inf')
+    tabu_list = []
+    for _ in range(max_iterations):
+        neighbors = list(graph.neighbors(current))
+        next_node = None
+        for n in neighbors:
+            if n not in tabu_list or graph[current][n]['weight'] < best_cost:
+                next_node = n
+                break
+        if not next_node:
+            break
+        best_path.append(next_node)
+        tabu_list.append(current)
+        if len(tabu_list) > tabu_size:
+            tabu_list.pop(0)
+        current = next_node
+        if current == end:
+            best_cost = sum(graph[best_path[i]][best_path[i + 1]]['weight'] for i in range(len(best_path) - 1))
+            break
+    return best_path if current == end else None, best_cost
+
+def tabu_search_with_sampling(graph, start, end, max_iterations=100, tabu_size=10, sample_size=3):
+    current = start
+    best_path = [current]
+    best_cost = float('inf')
+    tabu_list = []
+    for _ in range(max_iterations):
+        neighbors = list(graph.neighbors(current))
+        neighbors = [n for n in neighbors if n not in tabu_list]
+        if not neighbors:
+            break
+        sampled_neighbors = random.sample(neighbors, min(sample_size, len(neighbors)))
+        next_node = min(sampled_neighbors, key=lambda n: graph[current][n]['weight'])
+        best_path.append(next_node)
+        tabu_list.append(current)
+        if len(tabu_list) > tabu_size:
+            tabu_list.pop(0)
+        current = next_node
+        if current == end:
+            best_cost = sum(graph[best_path[i]][best_path[i + 1]]['weight'] for i in range(len(best_path) - 1))
+            break
+    return best_path if current == end else None, best_cost
+
+
 def main():
     # load csv 
-    graph = load_data("Project A/connection_graph.csv") 
+    graph = load_data("connection_graph.csv") 
     # declare start and end 
     start, end = "FAT", "Berenta"
     # run the algorithm from the start
+    # start timer 
+    djkstrasTime = stopWatch("djkstra")
+    djkstrasTime.start()
     dist, prev = dijkstra(graph, start)
     path = get_path(prev, start, end)
+    djkstrasTime.stop()
     print(f"Route: {path}, Time: {dist.get(end, '∞')} sec")
+    
+    # Run A* algorithm
+    aStarTimer = stopWatch("A star")
+    aStarTimer.start()
+    a_star_path = a_star(graph, start, end)
+    aStarTimer.stop()
+    if a_star_path:
+        print(f"A* Route: {a_star_path}")
+    else:
+        print("No route found using A*.")
+    
+    # Visualize A* path
+    def show_a_star_path(graph, path):
+        if not path:
+            print("No path to visualize for A*.")
+            return
+        subgraph = graph.subgraph(path)
+        plt.figure(figsize=(10, 6))
+        pos = nx.spring_layout(subgraph, seed=random.randint(0, 100))
+        nx.draw(subgraph, pos, with_labels=True, node_color="lightgreen", edge_color="blue", node_size=700, font_size=10)
+        nx.draw_networkx_edges(subgraph, pos, edgelist=list(zip(path, path[1:])), edge_color="blue", width=2.5)
+        nx.draw_networkx_nodes(subgraph, pos, nodelist=path, node_color="orange", node_size=700)
+        plt.title("A* Path Visualization")
+        plt.show()
 
-
+    show_a_star_path(graph, a_star_path)
     # End the timer
-    end_time = time.time()
+    
+    # Run Tabu Search algorithm
+    # (it doesn't work at all for some odd reason)
+    # tabu search assisted heavily by AI ~60%
+    tabuTimer = stopWatch("Tabu Search")
+    tabuTimer.start()
+    tabu_path, tabu_cost = tabu_search(graph, start, end)
+    tabuTimer.stop()
+    if tabu_path:
+        print(f"Tabu Search Route: {tabu_path}, Cost: {tabu_cost}")
+    else:
+        print("No route found using Tabu Search.")
 
+    # Visualize Tabu Search path
+    def show_tabu_path(graph, path):
+        if not path:
+            print("No path to visualize for Tabu Search.")
+            return
+        subgraph = graph.subgraph(path)
+        plt.figure(figsize=(10, 6))
+        pos = nx.spring_layout(subgraph, seed=random.randint(0, 100))
+        nx.draw(subgraph, pos, with_labels=True, node_color="lightcoral", edge_color="purple", node_size=700, font_size=10)
+        nx.draw_networkx_edges(subgraph, pos, edgelist=list(zip(path, path[1:])), edge_color="purple", width=2.5)
+        nx.draw_networkx_nodes(subgraph, pos, nodelist=path, node_color="pink", node_size=700)
+        plt.title("Tabu Search Path Visualization")
+        plt.show()
+
+    show_tabu_path(graph, tabu_path)
     # Calculate elapsed time
-    elapsed_time = end_time - start_time
-    print(f"Execution time: {elapsed_time} seconds")
+    # djkstras
     # 10.013 seconds
     # 9.59 seconds
     # 9.58
